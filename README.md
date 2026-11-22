@@ -11,109 +11,420 @@ uv run main.py
 ```
 Сервер будет доступен по адресу: http://localhost:8080/healthcheck
 
+
 # Развёртывание backend «ЯЕда»
 
-Одна команда на сервере: `bash deploy/deploy.sh`. Backend собирается в Docker, данные (SQLite) лежат в постоянном томе, порт 8080 открыт для Telegram-бота.
+Инструкция по развёртыванию backend на виртуальной машине Linux с использованием Docker и Docker Compose.
 
-## Что нужно на сервере
+## 1. Архитектура
 
-Linux, Docker Engine с плагином Compose v2, `git`, `openssl`, `curl` и открытый порт (по умолчанию `8080/tcp`).
+Backend разворачивается на одной виртуальной машине в Yandex Cloud.
 
-## Первый запуск
+Используемые компоненты:
+
+- **FastAPI** — HTTP API приложения.
+- **Docker** — контейнеризация backend.
+- **Docker Compose** — сборка и запуск контейнеров.
+- **SQLite** — хранение данных приложения.
+- **Дополнительный HDD** — постоянное хранение базы данных.
+
+Структура развёртывания:
+
+```text
+Yandex Cloud VM
+│
+├── Docker Engine
+│   │
+│   └── Docker Compose
+│       │
+│       ├── backend
+│       │   └── FastAPI :8080
+│       │
+│       └── yaeda network
+│
+└── /mnt/students-data/yaeda/
+    ├── app.db
+    ├── app.db-wal
+    └── app.db-shm
+```
+
+Backend работает в Docker-контейнере и автоматически перезапускается после перезагрузки сервера.
+
+Telegram-бот может быть добавлен позднее как отдельный сервис в ту же Docker-сеть.
+
+## 2. Требования к серверу
+
+Для развёртывания необходимы:
+
+- Linux (рекомендуется Ubuntu 24.04).
+- Docker Engine.
+- Docker Compose V2.
+- Git.
+- OpenSSL.
+- curl.
+- Дополнительный диск, смонтированный в `/mnt/students-data`.
+
+Пользователь сервера должен иметь возможность запускать Docker.
+
+## 3. Подготовка сервера
+
+### Установка Docker
+
+Если Docker ещё не установлен:
 
 ```bash
-git clone <URL репозитория> yaeda && cd yaeda
+sudo apt update
+sudo apt install -y docker.io docker-compose-v2 git openssl curl
+```
+
+Включение автоматического запуска Docker:
+
+```bash
+sudo systemctl enable --now docker
+```
+
+Добавление пользователя в группу Docker:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+После этого необходимо выйти из SSH-сессии и подключиться заново.
+
+Проверка установки:
+
+```bash
+docker --version
+docker compose version
+```
+
+### Подготовка диска
+
+Дополнительный диск должен быть смонтирован в:
+
+```text
+/mnt/students-data
+```
+
+Создание директории для базы данных:
+
+```bash
+sudo mkdir -p /mnt/students-data/yaeda
+sudo chown 10001:10001 /mnt/students-data/yaeda
+sudo chmod 700 /mnt/students-data/yaeda
+```
+
+Контейнер запускается от пользователя с UID 10001, поэтому директория должна быть доступна для записи этому пользователю.
+
+## 4. Первый запуск
+
+Клонирование репозитория:
+
+```bash
+git clone https://github.com/zxcbebra67/IFood.git
+cd IFood
+```
+
+Запуск приложения:
+
+```bash
 bash deploy/deploy.sh
 ```
 
-Скрипт создаст `.env` из `.env.example`, сгенерирует `BOT_API_KEY` (если он пуст), соберёт образ, запустит контейнер и дождётся статуса healthy. Проверка:
+Скрипт автоматически:
+
+1. Проверяет наличие Docker и Docker Compose.
+2. Создаёт `.env` из `.env.example`, если файл отсутствует.
+3. Генерирует `BOT_API_KEY`, если он не задан.
+4. Собирает Docker-образ backend.
+5. Создаёт Docker-сеть.
+6. Запускает контейнер.
+7. Ожидает успешного прохождения healthcheck.
+
+После успешного запуска контейнер должен получить статус `healthy`.
+
+## 5. Проверка работоспособности
+
+Проверка состояния контейнеров:
 
 ```bash
-bash deploy/deploy.sh check          # или: curl http://<сервер>:8080/healthcheck
-grep BOT_API_KEY .env                # ключ для бота; в открытый чат и git не отправлять
+bash deploy/deploy.sh status
 ```
 
-## Обновление
+Проверка API:
 
 ```bash
-git pull && bash deploy/deploy.sh    # на сервере
-bash deploy/deploy.sh remote         # со своей машины по SSH (настройка ниже)
+bash deploy/deploy.sh check
 ```
 
-## Команды
+Либо напрямую:
 
-| Команда | Что делает |
-|---|---|
-| `up` (по умолчанию) | собрать и перезапустить все сервисы |
-| `down` | остановить и удалить контейнеры, данные остаются |
-| `restart` | перезапустить без пересборки |
-| `status` | состояние контейнеров |
-| `logs [сервис]` | логи |
-| `check` | проверить `/healthcheck` |
-| `remote` | выполнить `up` на сервере по SSH |
+```bash
+curl http://127.0.0.1:8080/healthcheck
+```
 
-## Настройки (`.env`)
+Ожидаемый ответ:
 
-| Переменная | По умолчанию | Назначение |
-|---|---|---|
-| `BOT_API_KEY` | генерируется | ключ бот → backend (заголовок `X-API-Key`) |
-| `BACKEND_PORT` | `8080` | порт на хосте |
-| `BACKEND_BIND` | `0.0.0.0` | `127.0.0.1`, если порт не нужен снаружи |
+```json
+{"status":"ok"}
+```
 
-База лежит в томе `backend-data` (`/data/app.db`) и переживает перезапуск и пересборку. Команда `docker compose down -v` удалит том вместе с данными.
+Просмотр логов:
 
-## Как подключается бот
+```bash
+bash deploy/deploy.sh logs backend
+```
 
-- **В той же compose-сети**: адрес `http://backend:8080`, заголовок `X-API-Key: <BOT_API_KEY>`.
-- **С другой машины**: `http://<сервер>:<BACKEND_PORT>`, на сервере порт должен быть открыт (`ufw allow 8080/tcp`).
-- **HTTPS**: контракт требует его для рабочих вызовов, а сам backend отвечает по HTTP. Для боевого режима поставьте перед ним reverse proxy (Caddy или nginx) с сертификатом.
+Просмотр последних 50 строк логов:
 
-## Как встроить свой сервис (например, бота)
+```bash
+docker compose logs --tail=50 backend
+```
 
-Скрипт сам подхватывает все файлы `deploy/compose.d/*.yml`: свой сервис достаточно описать в отдельном файле, `deploy.sh` не меняется.
+## 6. Хранение данных
+
+SQLite хранится на дополнительном HDD сервера.
+
+Путь на сервере:
+
+```text
+/mnt/students-data/yaeda/app.db
+```
+
+Путь внутри контейнера:
+
+```text
+/data/app.db
+```
+
+В `docker-compose.yml` используется bind mount:
 
 ```yaml
-# deploy/compose.d/bot.yml
+volumes:
+  - /mnt/students-data/yaeda:/data
+```
+
+Это означает, что база данных находится вне контейнера и сохраняется при:
+
+- перезапуске контейнера;
+- пересборке Docker-образа;
+- пересоздании контейнера;
+- обновлении приложения.
+
+SQLite также может создавать файлы `app.db-wal` и `app.db-shm`. Они необходимы для работы базы в режиме WAL. Не следует удалять их вручную во время работы приложения.
+
+**Важно:** удаление контейнера или выполнение `docker compose down` не удаляет базу данных. Однако удаление или форматирование самого HDD приведёт к потере данных.
+
+Рекомендуется периодически создавать резервные копии базы данных.
+
+## 7. Конфигурация приложения
+
+Настройки хранятся в `.env` в корне проекта.
+
+| Переменная | Значение по умолчанию | Назначение |
+|---|---|---|
+| `BOT_API_KEY` | Генерируется автоматически | Ключ авторизации запросов от бота |
+| `BACKEND_PORT` | `8080` | Локальный порт сервера |
+| `BACKEND_BIND` | `127.0.0.1` | Адрес публикации порта на сервере |
+
+Пример `.env`:
+
+```env
+BOT_API_KEY=сгенерированный_секретный_ключ
+BACKEND_PORT=8080
+BACKEND_BIND=127.0.0.1
+```
+
+Файл `.env` содержит секретные данные и не должен попадать в Git.
+
+Для проверки наличия ключа без вывода его значения:
+
+```bash
+grep -q '^BOT_API_KEY=.' .env \
+  && echo "BOT_API_KEY задан"
+```
+
+Backend использует заголовок:
+
+```http
+X-API-Key: <BOT_API_KEY>
+```
+
+Не передавайте значение ключа через публичные чаты и не добавляйте его в репозиторий.
+
+## 8. Сетевое взаимодействие
+
+### Подключение из Docker-сети
+
+Для сервисов, находящихся в одной Docker-сети `yaeda`, backend доступен по адресу:
+
+```text
+http://backend:8080
+```
+
+Публиковать порт backend во внешний интернет для этого не требуется.
+
+### Подключение с другой машины
+
+По умолчанию порт backend опубликован только на `127.0.0.1`.
+
+Для внешнего подключения потребуется отдельно настроить безопасный доступ через HTTPS reverse proxy, например Caddy или Nginx.
+
+Backend самостоятельно обслуживает HTTP-запросы. TLS и HTTPS должны обеспечиваться reverse proxy.
+
+Не рекомендуется открывать порт 8080 всему интернету.
+
+## 9. Подключение Telegram-бота
+
+Telegram-бот разворачивается отдельным Docker-контейнером в той же Docker Compose сети.
+
+Для этого необходимо добавить конфигурацию:
+
+`deploy/compose.d/bot.yml`
+
+Пример:
+
+```yaml
 services:
   bot:
     build: ./telegram_bot
     restart: unless-stopped
+
     environment:
       BACKEND_URL: http://backend:8080
       BACKEND_API_KEY: ${BOT_API_KEY}
+
     depends_on:
       backend:
         condition: service_healthy
+
     networks:
       - yaeda
 ```
 
-Свои переменные добавляйте в `.env.example` отдельным блоком с комментарием.
+Путь `./telegram_bot` и остальные параметры необходимо согласовать с фактической структурой проекта бота.
 
-## Доступ к серверу по SSH
+Скрипт `deploy/deploy.sh` автоматически подхватывает YAML-файлы из `deploy/compose.d/`.
 
-Приватный ключ у каждого свой и никому не передаётся. В чат отправляется только публичный.
-
-```bash
-ssh-keygen -t ed25519 -C "ваше-имя@yaeda"
-cat ~/.ssh/id_ed25519.pub            # Windows (PowerShell): type $env:USERPROFILE\.ssh\id_ed25519.pub
-```
-
-Тот, у кого есть доступ к серверу, добавляет присланный публичный ключ:
+После добавления конфигурации запуск и обновление backend и бота выполняются одной командой:
 
 ```bash
-echo "ssh-ed25519 AAAA... имя@yaeda" >> ~/.ssh/authorized_keys
-chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
+bash deploy/deploy.sh up
 ```
 
-Удалённый деплой настраивается файлом `deploy/.deploy.env` (добавьте его в `.gitignore`):
+## 10. Обновление приложения
+
+Для обновления backend на сервере:
 
 ```bash
-DEPLOY_HOST=user@server
-DEPLOY_DIR=/home/user/yaeda
-DEPLOY_BRANCH=master
+cd ~/IFood
+git pull
+bash deploy/deploy.sh up
 ```
 
-## Файлы
+Скрипт пересоберёт образ и пересоздаст контейнер при необходимости.
+
+База данных при этом останется на дополнительном HDD.
+
+### Удалённое обновление
+
+Для запуска обновления со своего компьютера можно использовать:
+
+```bash
+bash deploy/deploy.sh remote
+```
+
+Для этого необходимо настроить файл `deploy/.deploy.env`:
+
+```env
+DEPLOY_HOST=ubuntu@адрес-сервера
+DEPLOY_DIR=/home/ubuntu/IFood
+DEPLOY_BRANCH=main
+```
+
+Файл `deploy/.deploy.env` необходимо добавить в `.gitignore`.
+
+## 11. Команды управления
+
+Все команды выполняются из корневой директории проекта.
+
+| Команда | Назначение |
+|---|---|
+| `bash deploy/deploy.sh` | Сборка и запуск |
+| `bash deploy/deploy.sh up` | Сборка и запуск |
+| `bash deploy/deploy.sh down` | Остановка и удаление контейнеров |
+| `bash deploy/deploy.sh restart` | Перезапуск контейнеров |
+| `bash deploy/deploy.sh status` | Состояние контейнеров |
+| `bash deploy/deploy.sh logs` | Просмотр логов |
+| `bash deploy/deploy.sh logs backend` | Логи backend |
+| `bash deploy/deploy.sh check` | Проверка доступности API |
+| `bash deploy/deploy.sh remote` | Удалённое обновление |
+
+## 12. SSH-доступ
+
+Для подключения к серверу используется SSH-аутентификация по ключу.
+
+Создание нового ключа:
+
+```bash
+ssh-keygen -t ed25519 -C "your-name@yaeda"
+```
+
+Публичный ключ находится в:
+
+```text
+~/.ssh/id_ed25519.pub
+```
+
+Приватный ключ нельзя передавать другим пользователям.
+
+Для предоставления доступа другому разработчику необходимо добавить его публичный ключ в `~/.ssh/authorized_keys` пользователя сервера:
+
+```bash
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+
+echo "ssh-ed25519 AAAA... your-name@yaeda" >> ~/.ssh/authorized_keys
+
+chmod 600 ~/.ssh/authorized_keys
+```
+
+## 13. Структура проекта
+
+```text
+IFood/
+├── main.py
+├── db.py
+├── search.py
+├── pyproject.toml
+├── uv.lock
+├── Dockerfile
+├── docker-compose.yml
+├── .dockerignore
+├── .env.example
+│
+├── deploy/
+│   ├── deploy.sh
+│   ├── README.md
+│   └── compose.d/
+│
+└── telegram_bot/
+    └── ...
+```
+
+Основные файлы:
+
+- `main.py` — FastAPI-приложение и API-эндпоинты.
+- `db.py` — работа с SQLite.
+- `search.py` — логика поиска.
+- `Dockerfile` — сборка образа backend.
+- `docker-compose.yml` — конфигурация сервисов.
+- `.env.example` — пример переменных окружения.
+- `deploy/deploy.sh` — автоматизация развёртывания.
+- `deploy/compose.d/` — дополнительные сервисы Docker Compose.
+
+---
+
+**Примечание:** Terraform используется отдельно для создания и настройки инфраструктуры Yandex Cloud (VM, диски, сеть и правила доступа). Для обычного обновления backend запускать Terraform не требуется.
 
 `Dockerfile`, `docker-compose.yml`, `.dockerignore` и `.env.example` лежат в корне репозитория, `deploy/deploy.sh` и `deploy/compose.d/` в папке `deploy/`.
