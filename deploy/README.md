@@ -55,27 +55,28 @@ bash deploy/deploy.sh remote         # со своей машины по SSH (н
 - **С другой машины**: `http://<сервер>:<BACKEND_PORT>`, на сервере порт должен быть открыт (`ufw allow 8080/tcp`).
 - **HTTPS**: контракт требует его для рабочих вызовов, а сам backend отвечает по HTTP. Для боевого режима поставьте перед ним reverse proxy (Caddy или nginx) с сертификатом.
 
-## Как встроить свой сервис (например, бота)
+## Запуск бэкенда и Telegram-бота вместе
 
-Скрипт сам подхватывает все файлы `deploy/compose.d/*.yml`: свой сервис достаточно описать в отдельном файле, `deploy.sh` не меняется.
+Сервис бота уже описан в `deploy/compose.d/bot.yml`. Скрипт запуска
+подключает этот файл автоматически.
 
-```yaml
-# deploy/compose.d/bot.yml
-services:
-  bot:
-    build: ./telegram_bot
-    restart: unless-stopped
-    environment:
-      BACKEND_URL: http://backend:8080
-      BACKEND_API_KEY: ${BOT_API_KEY}
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - yaeda
-```
+1. В корне проекта создай `.env` из `.env.example`, если файла ещё нет.
+2. В корневом `.env` задай `BOT_TOKEN` и включи `COMPOSE_PROFILES=bot`.
+   Оставь `BOT_API_KEY` пустым при первом запуске, скрипт сгенерирует общий ключ.
+   Для размещения бота и сервера на одной машине укажи `BACKEND_BIND=127.0.0.1`.
+3. Останови локальную копию Telegram-бота с тем же токеном и запусти:
 
-Свои переменные добавляйте в `.env.example` отдельным блоком с комментарием.
+   ```bash
+   bash deploy/deploy.sh up
+   bash deploy/deploy.sh check
+   bash deploy/deploy.sh logs bot
+   ```
+
+Бот дождётся готовности бэкенда и будет обращаться к нему по адресу
+`http://backend:8080` внутри Docker-сети. Для проверки пришли боту `/start`
+в Telegram, затем выполни поиск и генерацию рецепта.
+
+Чтобы запускать только бэкенд на чистой установке, оставь профиль бота выключенным.
 
 ## Доступ к серверу по SSH
 
