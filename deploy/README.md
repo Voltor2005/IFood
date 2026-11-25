@@ -50,8 +50,41 @@ bash deploy/deploy.sh remote         # со своей машины по SSH (н
 | `TELEGRAM_PROXY_URL` | Пусто | Прокси для запросов к Telegram Bot API |
 | `OPENROUTER_API_KEY` | Пусто | Ключ OpenRouter для генерации рецептов |
 | `OPENROUTER_MODEL` | `openai/gpt-4o-mini` | Модель генерации |
+| `OPENROUTER_PROXY_URL` | Пусто | HTTP-прокси для HTTPS-запросов бэкенда к OpenRouter |
 
-База лежит в томе `backend-data` (`/data/app.db`) и переживает перезапуск и пересборку. Команда `docker compose down -v` удалит том вместе с данными.
+Прокси Telegram и прокси OpenRouter задаются отдельно. Если для обоих используется
+один Webshare, можно указать в `.env` адрес один раз и добавить ниже:
+
+```dotenv
+OPENROUTER_PROXY_URL=${TELEGRAM_PROXY_URL}
+```
+
+После изменения `.env` выполните `bash deploy/deploy.sh up`, чтобы Compose
+применил настройки к контейнерам.
+
+## Хранение SQLite
+
+В контейнере база находится в `/data/app.db`. При новой установке используется
+том `backend-data`. На боевой ВМ каталог `/data` подключён с отдельного HDD.
+При обновлении на этой ВМ сохраните существующий локальный файл
+`deploy/compose.d/production.yml` и проверьте, что диск смонтирован.
+
+Минимальная настройка для ВМ с этим HDD:
+
+```yaml
+services:
+  backend:
+    volumes:
+      - type: bind
+        source: /mnt/students-data/yaeda
+        target: /data
+        bind:
+          create_host_path: false
+```
+
+SQLite может хранить рядом файлы `app.db-wal` и `app.db-shm`. Для резервного
+копирования работающей базы используйте SQLite Backup API или команду
+`.backup` SQLite. Команда `docker compose down -v` удаляет том новой установки.
 
 ## Как подключается бот
 

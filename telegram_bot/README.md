@@ -1,7 +1,7 @@
 # ЯЕда: Telegram-бот
 
 Задачи: #603 — поиск рецептов, #604 — добавление в избранное,
-#303 — предложение OpenAPI в `docs/bot-openapi.yaml`.
+#303 — контракт бэкенда в [OpenAPI](../docs/bot-openapi.yaml).
 Бот использует aiogram 3 и обращается только к нашему серверу.
 За основу взят минимальный бот из https://github.com/Voltor2005/for-ifood-bot.
 

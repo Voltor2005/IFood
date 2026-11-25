@@ -10,6 +10,8 @@ services:
       DB_PATH: /data/app.db
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      HTTPS_PROXY: ${OPENROUTER_PROXY_URL:-}
+      NO_PROXY: 127.0.0.1,localhost,backend
     volumes:
       - backend-data:/data
     ports:
