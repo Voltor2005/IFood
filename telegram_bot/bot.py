@@ -8,6 +8,7 @@ from pathlib import Path
 import aiohttp
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -265,6 +266,13 @@ async def main():
         raise RuntimeError(
             "Заполни BOT_TOKEN в telegram_bot/.env (пример: .env.example)"
         )
+    proxy_url = os.getenv("TELEGRAM_PROXY_URL", "").strip()
+    try:
+        telegram_session = AiohttpSession(proxy=proxy_url or None)
+    except (TypeError, ValueError):
+        raise RuntimeError(
+            "Проверь TELEGRAM_PROXY_URL: нужен URL прокси с поддерживаемой схемой и портом."
+        ) from None
     headers = {}
     if os.getenv("BOT_API_KEY"):
         headers["X-API-Key"] = os.environ["BOT_API_KEY"]
@@ -277,7 +285,7 @@ async def main():
             session, os.getenv("API_BASE_URL", "http://127.0.0.1:8081")
         )
         async with Bot(
-            token, default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+            token, session=telegram_session, default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         ) as bot:
             await dp.start_polling(bot)
 

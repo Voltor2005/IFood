@@ -73,7 +73,10 @@ class RecipesAPI:
 
     async def generate(self, description: str) -> Recipe:
         data = await self.request(
-            "POST", "/recipes/generate", json={"dish_description": description}
+            "POST",
+            "/recipes/generate",
+            json={"dish_description": description},
+            timeout=aiohttp.ClientTimeout(total=60),
         )
         try:
             return Recipe.parse(data)
@@ -81,7 +84,8 @@ class RecipesAPI:
             raise APIError("Сервер вернул непонятный рецепт. Попробуй позже.") from error
 
     async def search(self, query: str) -> list[Recipe]:
-        return await self.recipes("/recipes/search", params={"dish_description": query})
+        parameter = "ingredients" if "," in query else "dish_description"
+        return await self.recipes("/recipes/search", params={parameter: query})
 
     async def favorites(self, user_id: int) -> list[Recipe]:
         return await self.recipes("/fav", params={"user_id": user_id})

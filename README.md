@@ -50,7 +50,7 @@ Yandex Cloud VM
 
 Backend работает в Docker-контейнере и автоматически перезапускается после перезагрузки сервера.
 
-Telegram-бот может быть добавлен позднее как отдельный сервис в ту же Docker-сеть.
+Telegram-бот запускается как отдельный сервис в той же Docker-сети при включении профиля `bot`.
 
 ## 2. Требования к серверу
 
@@ -276,37 +276,9 @@ Backend самостоятельно обслуживает HTTP-запросы.
 
 ## 9. Подключение Telegram-бота
 
-Telegram-бот разворачивается отдельным Docker-контейнером в той же Docker Compose сети.
-
-Для этого необходимо добавить конфигурацию:
-
-`deploy/compose.d/bot.yml`
-
-Пример:
-
-```yaml
-services:
-  bot:
-    build: ./telegram_bot
-    restart: unless-stopped
-
-    environment:
-      BACKEND_URL: http://backend:8080
-      BACKEND_API_KEY: ${BOT_API_KEY}
-
-    depends_on:
-      backend:
-        condition: service_healthy
-
-    networks:
-      - yaeda
-```
-
-Путь `./telegram_bot` и остальные параметры необходимо согласовать с фактической структурой проекта бота.
-
-Скрипт `deploy/deploy.sh` автоматически подхватывает YAML-файлы из `deploy/compose.d/`.
-
-После добавления конфигурации запуск и обновление backend и бота выполняются одной командой:
+Скрипт `deploy/deploy.sh` автоматически подключает `deploy/compose.d/bot.yml`.
+Для запуска бота укажи `BOT_TOKEN` и `COMPOSE_PROFILES=bot` в корневом `.env`.
+Там же указывается `OPENROUTER_API_KEY` для генерации. Настройка прокси и порядок проверки описаны в [инструкции по развёртыванию](deploy/README.md).
 
 ```bash
 bash deploy/deploy.sh up

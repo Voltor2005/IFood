@@ -86,7 +86,7 @@ def normalize(value):
 
 
 async def search(request):
-    query = request.query.get("dish_description", "").strip()
+    query = (request.query.get("ingredients") or request.query.get("dish_description", "")).strip()
     if not 1 <= len(query) <= 2000:
         raise web.HTTPBadRequest(text="Invalid search")
     terms = [normalize(term) for term in query.split(",") if term.strip()]
