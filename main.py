@@ -309,9 +309,6 @@ def seed_initial_recipes(repo: SQLiteRecipeRepository) -> None:
         repo.save(recipe)
 
 
-    def save(self, recipe):
-        self._items[recipe.id] = recipe
-
 class OpenRouterRecipeGenerator:
     """Генератор рецептов через OpenRouter с использованием Responses API и Structured Outputs."""
 
@@ -379,7 +376,6 @@ class OpenRouterRecipeGenerator:
        
 # ---------- Зависимости ----------
 _generator = OpenRouterRecipeGenerator()
-
 
 
 def get_recipes(request: Request) -> RecipeRepository:
