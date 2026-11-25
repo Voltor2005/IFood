@@ -106,14 +106,11 @@ class SQLiteRecipeRepository:
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM recipes").fetchone()[0]
 
-    def search(
-        self,
-        ingredients: list[str],
-        dish_description: str | None,
-        taste_description: str | None,
-    ) -> list[Recipe]:
-        def norm(text: str) -> str:
-            return text.lower().replace("ё", "е").strip()
+    def search(self, ingredients, dish_description, taste_description):
+        # Нечёткий поиск по ингредиентам (все обязательны).
+        # Описания принимаются и проверяются, но пока не используются.
+        if not ingredients:
+            return []
 
         rows = self._conn.execute(
             "SELECT id, title, ingredients, steps, description, taste_tags, dish_type FROM recipes"
@@ -132,84 +129,15 @@ class SQLiteRecipeRepository:
             for row in rows
         ]
 
-        free_text = norm(f"{dish_description or ''} {taste_description or ''}")
-
-        # 1. отрицания
-        negations: list[str] = []
-        for match in re.finditer(r"\b(?:без|не)\s+([а-яa-z0-9-]+)", free_text):
-            word = match.group(1)
-            stem = word[:-2] if len(word) > 4 else (word[:-1] if len(word) > 3 else word)
-            negations.append(stem)
-
-        positive_text = re.sub(r"\b(?:без|не)\s+[а-яa-z0-9-]+", " ", free_text)
-
-        # 2. "быстрое" блюдо (<= 30 минут)
-        require_fast = bool(re.search(r"\bбыстр[а-я]*\b", positive_text))
-        positive_text = re.sub(r"\bбыстр[а-я]*\b", " ", positive_text)
-
-        stop_words = {
-            "приготовь", "рецепт", "блюдо", "хочу", "сделай", "что-нибудь",
-            "на", "из", "с", "со", "в", "во", "к", "ко", "и", "или", "для", "по",
-        }
-        positive_tokens = [
-            w for w in re.findall(r"[а-яa-z0-9-]+", positive_text)
-            if len(w) >= 2 and w not in stop_words
-        ]
-        positive_stems = [
-            w[:-2] if len(w) > 5 else (w[:-1] if len(w) > 3 else w)
-            for w in positive_tokens
-        ]
-
-        scored: list[tuple[float, Recipe]] = []
-
+        scored = []
         for recipe in all_recipes:
-            ingr_blob = norm(" ".join(recipe.ingredients))
-            tags_blob = norm(" ".join(recipe.taste_tags))
-            title_desc_blob = norm(f"{recipe.title} {recipe.description} {recipe.dish_type or ''}")
-            steps_blob = norm(" ".join(recipe.steps))
-            full_blob = f"{title_desc_blob} {ingr_blob} {tags_blob} {steps_blob}"
-
-            if any(neg in full_blob for neg in negations):
-                continue
-
-            if require_fast:
-                minutes = [int(m) for m in re.findall(r"(\d+)\s*мин", steps_blob)]
-                if not minutes or sum(minutes) > 30:
-                    continue
-
-            score = 0.0
-
-            if ingredients:
-                ingr_score = match_ingredients(ingredients, recipe.ingredients)
-                if ingr_score is None:
-                    continue
-                score += float(ingr_score) * 2.0
-
-            # Смысловое сопоставление по описанию блюда и вкусам
-            if positive_stems:
-                matched_stems = 0
-                for stem in positive_stems:
-                    if stem in tags_blob:
-                        score += 1.5
-                        matched_stems += 1
-                    elif stem in title_desc_blob or stem in ingr_blob:
-                        score += 1.0
-                        matched_stems += 1
-                    elif stem in steps_blob:
-                        score += 0.5
-                        matched_stems += 1
-
-                # Если запрос шёл только по описанию/вкусам, требуем хотя бы одно совпадение
-                if matched_stems == 0:
-                    continue
-            elif not ingredients and not require_fast and not negations:
-                continue
-
-            scored.append((score, recipe))
-
-        # Сортировка: по релевантности убыванию, при равенстве — по id возрастанию
+            score = match_ingredients(ingredients, recipe.ingredients)
+            if score is not None:
+                scored.append((score, recipe))
+        # по релевантности убыванию, при равенстве по id возрастанию
         scored.sort(key=lambda pair: (-pair[0], pair[1].id))
         return [recipe for _, recipe in scored]
+
 
 
     def save(self, recipe: Recipe) -> None:
@@ -380,20 +308,6 @@ def seed_initial_recipes(repo: SQLiteRecipeRepository) -> None:
     for recipe in recipes_to_save:
         repo.save(recipe)
 
-
-    def search(self, ingredients, dish_description, taste_description):
-        # Нечёткий поиск по ингредиентам (все обязательны).
-        # Описания принимаются и проверяются, но пока не используются.
-        if not ingredients:
-            return []
-        scored = []
-        for recipe in self._items.values():
-            score = match_ingredients(ingredients, recipe.ingredients)
-            if score is not None:
-                scored.append((score, recipe))
-        # по релевантности убыванию, при равенстве по id возрастанию
-        scored.sort(key=lambda pair: (-pair[0], pair[1].id))
-        return [recipe for _, recipe in scored]
 
     def save(self, recipe):
         self._items[recipe.id] = recipe
